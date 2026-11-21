@@ -23,12 +23,19 @@
   .card span{font-size:12px;color:#cfe8db}
   #msg{width:min(92vw,480px);text-align:center;min-height:24px;font-size:15px;margin-bottom:10px}
   #board{width:min(92vw,480px);aspect-ratio:1;display:grid;grid-template-columns:repeat(8,1fr);gap:4px;background:#08331f;padding:8px;border-radius:16px;box-shadow:0 10px 30px #0008}
-  .cell{background:#177245;border-radius:8px;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .cell{background:#177245;border-radius:8px;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;perspective:600px}
   .cell:hover{background:#1d8a54}
-  .cell .stone{width:84%;height:84%;border-radius:50%;pointer-events:none;transition:transform .18s}
+  .cell .stone{width:84%;height:84%;border-radius:50%;pointer-events:none;position:relative}
   .cell .stone.black{background:radial-gradient(circle at 35% 30%,#555,#000 70%);box-shadow:inset -3px -4px 6px #0009,0 2px 5px #0007}
   .cell .stone.white{background:radial-gradient(circle at 35% 30%,#fff,#cfcfcf 70%);box-shadow:inset -3px -4px 6px #0003,0 2px 5px #0007}
-  .cell .stone.flip{transform:scale(.85)}
+  .cell .stone.placed{animation:placeStone .32s ease-out}
+  @keyframes placeStone{0%{transform:scale(.3)}60%{transform:scale(1.12)}100%{transform:scale(1)}}
+  .cell .stone.flipping{background:none;box-shadow:none;transform-style:preserve-3d;animation:flipStone .55s ease both}
+  @keyframes flipStone{0%{transform:rotateY(0)}50%{transform:rotateY(90deg) scale(1.12)}100%{transform:rotateY(180deg)}}
+  .cell .stone .face{position:absolute;inset:0;border-radius:50%;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+  .cell .stone .face.black{background:radial-gradient(circle at 35% 30%,#555,#000 70%);box-shadow:inset -3px -4px 6px #0009,0 2px 5px #0007}
+  .cell .stone .face.white{background:radial-gradient(circle at 35% 30%,#fff,#cfcfcf 70%);box-shadow:inset -3px -4px 6px #0003,0 2px 5px #0007}
+  .cell .stone .face.back{transform:rotateY(180deg)}
   .cell .hint{width:26%;height:26%;border-radius:50%;background:#ffffff55;pointer-events:none}
   .cell.last::after{content:"";position:absolute;inset:3px;border:2px solid #f5c542;border-radius:6px;pointer-events:none}
   .foot{margin-top:14px;font-size:12px;color:#9fc9b4;text-align:center;line-height:1.7}
@@ -64,7 +71,7 @@
 
 <script>
 const EMPTY=0, BLACK=1, WHITE=2;
-let board, turn, history, lastMove, gameOver;
+let board, turn, history, lastMove, gameOver, flipAnim=null;
 const boardEl=document.getElementById('board');
 const msgEl=document.getElementById('msg');
 const modeEl=document.getElementById('mode');
@@ -92,7 +99,7 @@ function legalMoves(b,p){
 function init(){
   board=Array.from({length:8},()=>Array(8).fill(EMPTY));
   board[3][3]=WHITE; board[3][4]=BLACK; board[4][3]=BLACK; board[4][4]=WHITE;
-  turn=BLACK; history=[]; lastMove=null; gameOver=false;
+  turn=BLACK; history=[]; lastMove=null; gameOver=false; flipAnim=null;
   render('黒の番です');
 }
 function counts(){
@@ -105,7 +112,20 @@ function render(message){
     const cell=document.createElement('div'); cell.className='cell';
     if(lastMove&&lastMove[0]===r&&lastMove[1]===c) cell.className+=' last';
     const v=board[r][c];
-    if(v!==EMPTY){const s=document.createElement('div'); s.className='stone '+(v===BLACK?'black':'white'); cell.appendChild(s);}
+    if(v!==EMPTY){
+      const flipIdx = flipAnim ? flipAnim.flips.findIndex(([fr,fc])=>fr===r&&fc===c) : -1;
+      if(flipIdx>=0){
+        const s=document.createElement('div'); s.className='stone flipping';
+        s.style.animationDelay=(flipIdx*70)+'ms';
+        const front=document.createElement('div'); front.className='face '+(flipAnim.from===BLACK?'black':'white');
+        const back=document.createElement('div'); back.className='face back '+(v===BLACK?'black':'white');
+        s.appendChild(front); s.appendChild(back); cell.appendChild(s);
+      } else {
+        const s=document.createElement('div'); s.className='stone '+(v===BLACK?'black':'white');
+        if(flipAnim && flipAnim.placed && flipAnim.placed[0]===r && flipAnim.placed[1]===c) s.className+=' placed';
+        cell.appendChild(s);
+      }
+    }
     else{
       const mv=moves.find(m=>m.r===r&&m.c===c);
       const isCpuTurn = modeEl.value==='cpu' && turn===WHITE;
@@ -122,6 +142,10 @@ function render(message){
 }
 function play(mv){
   history.push({board:board.map(r=>r.slice()),turn,lastMove});
+  const orderedFlips=mv.flips.slice().sort((a,b)=>{
+    const da=(a[0]-mv.r)**2+(a[1]-mv.c)**2, db=(b[0]-mv.r)**2+(b[1]-mv.c)**2; return da-db;
+  });
+  flipAnim={flips:orderedFlips, from:opp(turn), placed:[mv.r,mv.c]};
   board[mv.r][mv.c]=turn;
   mv.flips.forEach(([r,c])=>board[r][c]=turn);
   lastMove=[mv.r,mv.c];
@@ -145,7 +169,7 @@ function afterTurn(){
   if(gameOver) return;
   if(modeEl.value==='cpu'&&turn===WHITE){
     render('CPUが考え中…');
-    setTimeout(cpuMove,450);
+    setTimeout(cpuMove,900);
   }
 }
 function cpuMove(){
@@ -180,7 +204,7 @@ document.getElementById('undo').onclick=()=>{
   let steps = (modeEl.value==='cpu') ? 2 : 1;
   let snap=null;
   while(steps-->0 && history.length) snap=history.pop();
-  if(snap){board=snap.board; turn=snap.turn; lastMove=snap.lastMove; gameOver=false; render('待ったしました。'+(turn===BLACK?'黒':'白')+'の番です');}
+  if(snap){board=snap.board; turn=snap.turn; lastMove=snap.lastMove; gameOver=false; flipAnim=null; render('待ったしました。'+(turn===BLACK?'黒':'白')+'の番です');}
 };
 init();
 </script>
