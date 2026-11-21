@@ -13,7 +13,12 @@
   select,button{font-size:14px;padding:8px 12px;border-radius:999px;border:1px solid #ffffff33;background:#1b4d3a;color:#fff;cursor:pointer}
   button.primary{background:#f5c542;color:#111;border-color:transparent;font-weight:700}
   button:active{transform:scale(.97)}
-  .score{width:min(92vw,480px);display:flex;gap:8px;margin-bottom:12px}
+  .score{width:min(92vw,480px);display:flex;gap:8px;margin-bottom:4px}
+  .score.top-score{transform:rotate(180deg);margin-bottom:8px}
+  #msgTop{width:min(92vw,480px);text-align:center;min-height:22px;font-size:15px;margin-bottom:6px;transform:rotate(180deg)}
+  #boardWrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center}
+  .chk{font-size:13px;display:flex;align-items:center;gap:5px;padding:8px 4px;cursor:pointer}
+  .chk input{width:17px;height:17px;accent-color:#f5c542}
   .card{flex:1;background:#ffffff14;border:1px solid #ffffff22;border-radius:14px;padding:10px 12px;display:flex;align-items:center;gap:10px}
   .card.turn{outline:2px solid #f5c542}
   .disc{width:28px;height:28px;border-radius:50%;flex:none;box-shadow:inset -3px -4px 6px #0006,0 2px 4px #0008}
@@ -22,7 +27,7 @@
   .card b{font-size:20px}
   .card span{font-size:12px;color:#cfe8db}
   #msg{width:min(92vw,480px);text-align:center;min-height:24px;font-size:15px;margin-bottom:10px}
-  #board{width:min(92vw,480px);aspect-ratio:1;display:grid;grid-template-columns:repeat(8,1fr);gap:4px;background:#08331f;padding:8px;border-radius:16px;box-shadow:0 10px 30px #0008}
+  #board{width:min(92vw,480px);aspect-ratio:1;display:grid;grid-template-columns:repeat(8,1fr);gap:4px;background:#08331f;padding:8px;border-radius:16px;box-shadow:0 10px 30px #0008;transition:transform .6s ease}
   .cell{background:#177245;border-radius:8px;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;perspective:600px}
   .cell:hover{background:#1d8a54}
   .cell .stone{width:84%;height:84%;border-radius:50%;pointer-events:none;position:relative}
@@ -40,7 +45,6 @@
   .cell .stone .face.back{transform:rotateY(180deg)}
   .cell .hint{width:26%;height:26%;border-radius:50%;background:#ffffff55;pointer-events:none}
   .cell.last::after{content:"";position:absolute;inset:3px;border:2px solid #f5c542;border-radius:6px;pointer-events:none}
-  .foot{margin-top:14px;font-size:12px;color:#9fc9b4;text-align:center;line-height:1.7}
 </style>
 </head>
 <body>
@@ -66,17 +70,23 @@
   </select>
   <button id="undo">待った</button>
   <button id="restart" class="primary">最初から</button>
+  <label class="chk"><input type="checkbox" id="face" checked> 対面（2人対戦で白の番に盤を回転）</label>
 </div>
+
+<div class="score top-score" id="topScore" style="display:none">
+  <div class="card" id="cardB2"><div class="disc black"></div><div><b id="countB2">2</b> <span>黒</span></div></div>
+  <div class="card" id="cardW2"><div class="disc white"></div><div><b id="countW2">2</b> <span>白</span></div></div>
+</div>
+<div id="msgTop" style="display:none"></div>
+
+<div id="boardWrap"><div id="board"></div></div>
+
+<div id="msg"></div>
 
 <div class="score">
   <div class="card" id="cardB"><div class="disc black"></div><div><b id="countB">2</b> <span>黒</span></div></div>
   <div class="card" id="cardW"><div class="disc white"></div><div><b id="countW">2</b> <span>白</span></div></div>
 </div>
-
-<div id="msg"></div>
-<div id="board"></div>
-
-<div class="foot">置ける場所は半透明の丸で表示されます。裏返る石は黄色く光って、1個ずつ大きくひっくり返ります。<br>ハンディは黒の石を四隅（左上→右上→左下→右下の順）に最初から置く機能です。角の石は裏返りません。</div>
 
 <script>
 const EMPTY=0, BLACK=1, WHITE=2;
@@ -86,6 +96,9 @@ const msgEl=document.getElementById('msg');
 const modeEl=document.getElementById('mode');
 const levelEl=document.getElementById('level');
 const handicapEl=document.getElementById('handicap');
+const faceEl=document.getElementById('face');
+const topScoreEl=document.getElementById('topScore');
+const msgTopEl=document.getElementById('msgTop');
 const FLIP_MS=950, FLIP_STAGGER=200;
 function flipTotalMs(n){ return n>0 ? (n-1)*FLIP_STAGGER+FLIP_MS : 500; }
 
@@ -153,9 +166,17 @@ function render(message){
   const {b,w}=counts();
   document.getElementById('countB').textContent=b;
   document.getElementById('countW').textContent=w;
+  document.getElementById('countB2').textContent=b;
+  document.getElementById('countW2').textContent=w;
   document.getElementById('cardB').classList.toggle('turn',turn===BLACK&&!gameOver);
   document.getElementById('cardW').classList.toggle('turn',turn===WHITE&&!gameOver);
-  if(message) msgEl.textContent=message;
+  document.getElementById('cardB2').classList.toggle('turn',turn===BLACK&&!gameOver);
+  document.getElementById('cardW2').classList.toggle('turn',turn===WHITE&&!gameOver);
+  const is2p = modeEl.value==='2p';
+  topScoreEl.style.display = is2p ? 'flex' : 'none';
+  msgTopEl.style.display = is2p ? 'block' : 'none';
+  boardEl.style.transform = (is2p && faceEl.checked && turn===WHITE && !gameOver) ? 'rotate(180deg)' : '';
+  if(message){ msgEl.textContent=message; msgTopEl.textContent=message; }
 }
 function play(mv){
   history.push({board:board.map(r=>r.slice()),turn,lastMove});
@@ -220,7 +241,7 @@ function endGame(){
   render('対局終了：'+t);
 }
 document.getElementById('restart').onclick=init;
-modeEl.onchange=init; levelEl.onchange=()=>{}; handicapEl.onchange=init;
+modeEl.onchange=init; levelEl.onchange=()=>{}; handicapEl.onchange=init; faceEl.onchange=()=>render(msgEl.textContent);
 document.getElementById('undo').onclick=()=>{
   if(!history.length) return;
   let steps = (modeEl.value==='cpu') ? 2 : 1;
