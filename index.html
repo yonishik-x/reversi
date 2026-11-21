@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>オセロ / リバーシ</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;background:#0f2e23;color:#fff;min-height:100dvh;display:flex;flex-direction:column;align-items:center;padding:16px 12px 24px}
+  h1{font-size:22px;margin:4px 0 2px;letter-spacing:.08em}
+  .sub{font-size:12px;color:#bfe3d2;margin-bottom:12px}
+  .bar{width:min(92vw,480px);display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:12px}
+  select,button{font-size:14px;padding:8px 12px;border-radius:999px;border:1px solid #ffffff33;background:#1b4d3a;color:#fff;cursor:pointer}
+  button.primary{background:#f5c542;color:#111;border-color:transparent;font-weight:700}
+  button:active{transform:scale(.97)}
+  .score{width:min(92vw,480px);display:flex;gap:8px;margin-bottom:12px}
+  .card{flex:1;background:#ffffff14;border:1px solid #ffffff22;border-radius:14px;padding:10px 12px;display:flex;align-items:center;gap:10px}
+  .card.turn{outline:2px solid #f5c542}
+  .disc{width:28px;height:28px;border-radius:50%;flex:none;box-shadow:inset -3px -4px 6px #0006,0 2px 4px #0008}
+  .disc.black{background:radial-gradient(circle at 35% 30%,#555,#000 70%)}
+  .disc.white{background:radial-gradient(circle at 35% 30%,#fff,#cfcfcf 70%)}
+  .card b{font-size:20px}
+  .card span{font-size:12px;color:#cfe8db}
+  #msg{width:min(92vw,480px);text-align:center;min-height:24px;font-size:15px;margin-bottom:10px}
+  #board{width:min(92vw,480px);aspect-ratio:1;display:grid;grid-template-columns:repeat(8,1fr);gap:4px;background:#08331f;padding:8px;border-radius:16px;box-shadow:0 10px 30px #0008}
+  .cell{background:#177245;border-radius:8px;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .cell:hover{background:#1d8a54}
+  .cell .stone{width:84%;height:84%;border-radius:50%;pointer-events:none;transition:transform .18s}
+  .cell .stone.black{background:radial-gradient(circle at 35% 30%,#555,#000 70%);box-shadow:inset -3px -4px 6px #0009,0 2px 5px #0007}
+  .cell .stone.white{background:radial-gradient(circle at 35% 30%,#fff,#cfcfcf 70%);box-shadow:inset -3px -4px 6px #0003,0 2px 5px #0007}
+  .cell .stone.flip{transform:scale(.85)}
+  .cell .hint{width:26%;height:26%;border-radius:50%;background:#ffffff55;pointer-events:none}
+  .cell.last::after{content:"";position:absolute;inset:3px;border:2px solid #f5c542;border-radius:6px;pointer-events:none}
+  .foot{margin-top:14px;font-size:12px;color:#9fc9b4;text-align:center;line-height:1.7}
+</style>
+</head>
+<body>
+<h1>オセロ</h1>
+<div class="sub">REVERSI ・ 1枚HTML版</div>
+
+<div class="bar">
+  <select id="mode">
+    <option value="cpu" selected>1人で対戦（あなた＝黒 / CPU＝白）</option>
+    <option value="2p">2人で対戦</option>
+  </select>
+  <select id="level">
+    <option value="1">CPU 弱い</option>
+    <option value="2" selected>CPU 普通</option>
+    <option value="3">CPU 強い</option>
+  </select>
+  <button id="undo">待った</button>
+  <button id="restart" class="primary">最初から</button>
+</div>
+
+<div class="score">
+  <div class="card" id="cardB"><div class="disc black"></div><div><b id="countB">2</b> <span>黒</span></div></div>
+  <div class="card" id="cardW"><div class="disc white"></div><div><b id="countW">2</b> <span>白</span></div></div>
+</div>
+
+<div id="msg"></div>
+<div id="board"></div>
+
+<div class="foot">置ける場所は半透明の丸で表示されます。<br>角が強いのはオセロの基本です。CPU強いは角と辺を重視します。</div>
+
+<script>
+const EMPTY=0, BLACK=1, WHITE=2;
+let board, turn, history, lastMove, gameOver;
+const boardEl=document.getElementById('board');
+const msgEl=document.getElementById('msg');
+const modeEl=document.getElementById('mode');
+const levelEl=document.getElementById('level');
+
+const DIRS=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const inB=(r,c)=>r>=0&&r<8&&c>=0&&c<8;
+const opp=p=>p===BLACK?WHITE:BLACK;
+
+function flipsFor(b,r,c,p){
+  if(b[r][c]!==EMPTY) return [];
+  let all=[];
+  for(const [dr,dc] of DIRS){
+    let line=[], rr=r+dr, cc=c+dc;
+    while(inB(rr,cc)&&b[rr][cc]===opp(p)){line.push([rr,cc]); rr+=dr; cc+=dc;}
+    if(line.length&&inB(rr,cc)&&b[rr][cc]===p) all=all.concat(line);
+  }
+  return all;
+}
+function legalMoves(b,p){
+  let m=[];
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){const f=flipsFor(b,r,c,p); if(f.length) m.push({r,c,flips:f});}
+  return m;
+}
+function init(){
+  board=Array.from({length:8},()=>Array(8).fill(EMPTY));
+  board[3][3]=WHITE; board[3][4]=BLACK; board[4][3]=BLACK; board[4][4]=WHITE;
+  turn=BLACK; history=[]; lastMove=null; gameOver=false;
+  render('黒の番です');
+}
+function counts(){
+  let b=0,w=0; board.flat().forEach(v=>{if(v===BLACK)b++; if(v===WHITE)w++;}); return {b,w};
+}
+function render(message){
+  const moves=legalMoves(board,turn);
+  boardEl.innerHTML='';
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const cell=document.createElement('div'); cell.className='cell';
+    if(lastMove&&lastMove[0]===r&&lastMove[1]===c) cell.className+=' last';
+    const v=board[r][c];
+    if(v!==EMPTY){const s=document.createElement('div'); s.className='stone '+(v===BLACK?'black':'white'); cell.appendChild(s);}
+    else{
+      const mv=moves.find(m=>m.r===r&&m.c===c);
+      const isCpuTurn = modeEl.value==='cpu' && turn===WHITE;
+      if(mv&&!gameOver&&!isCpuTurn){const h=document.createElement('div'); h.className='hint'; cell.appendChild(h); cell.onclick=()=>play(mv);}
+    }
+    boardEl.appendChild(cell);
+  }
+  const {b,w}=counts();
+  document.getElementById('countB').textContent=b;
+  document.getElementById('countW').textContent=w;
+  document.getElementById('cardB').classList.toggle('turn',turn===BLACK&&!gameOver);
+  document.getElementById('cardW').classList.toggle('turn',turn===WHITE&&!gameOver);
+  if(message) msgEl.textContent=message;
+}
+function play(mv){
+  history.push({board:board.map(r=>r.slice()),turn,lastMove});
+  board[mv.r][mv.c]=turn;
+  mv.flips.forEach(([r,c])=>board[r][c]=turn);
+  lastMove=[mv.r,mv.c];
+  nextTurn();
+}
+function nextTurn(){
+  const prev=turn; turn=opp(turn);
+  const moves=legalMoves(board,turn);
+  if(moves.length===0){
+    const back=legalMoves(board,prev);
+    if(back.length===0){ endGame(); return; }
+    render((turn===BLACK?'黒':'白')+'は置ける場所がないのでパスします');
+    turn=prev;
+    setTimeout(()=>afterTurn(),650);
+    return;
+  }
+  render((turn===BLACK?'黒':'白')+'の番です');
+  afterTurn();
+}
+function afterTurn(){
+  if(gameOver) return;
+  if(modeEl.value==='cpu'&&turn===WHITE){
+    render('CPUが考え中…');
+    setTimeout(cpuMove,450);
+  }
+}
+function cpuMove(){
+  const moves=legalMoves(board,WHITE); if(!moves.length){nextTurn();return;}
+  const lvl=+levelEl.value;
+  let chosen;
+  if(lvl===1){ chosen=moves[Math.floor(Math.random()*moves.length)]; }
+  else{
+    const W=[[120,-20,20,5,5,20,-20,120],[-20,-40,-5,-5,-5,-5,-40,-20],[20,-5,15,3,3,15,-5,20],[5,-5,3,3,3,3,-5,5],[5,-5,3,3,3,3,-5,5],[20,-5,15,3,3,15,-5,20],[-20,-40,-5,-5,-5,-5,-40,-20],[120,-20,20,5,5,20,-20,120]];
+    let best=-1e9;
+    for(const m of moves){
+      let score = (lvl===3? W[m.r][m.c] : 0) + m.flips.length* (lvl===3?2:10) + Math.random()* (lvl===3?2:4);
+      // 強い: 相手の合法手も減らす手を評価
+      if(lvl===3){
+        const copy=board.map(r=>r.slice()); copy[m.r][m.c]=WHITE; m.flips.forEach(([r,c])=>copy[r][c]=WHITE);
+        score -= legalMoves(copy,BLACK).length*3;
+      }
+      if(score>best){best=score; chosen=m;}
+    }
+  }
+  play(chosen);
+}
+function endGame(){
+  gameOver=true; const {b,w}=counts();
+  let t = b>w ? `黒の勝ちです（${b} 対 ${w}）` : w>b ? `白の勝ちです（${w} 対 ${b}）` : `引き分けです（${b} 対 ${w}）`;
+  render('対局終了：'+t);
+}
+document.getElementById('restart').onclick=init;
+modeEl.onchange=init; levelEl.onchange=()=>{};
+document.getElementById('undo').onclick=()=>{
+  if(!history.length) return;
+  let steps = (modeEl.value==='cpu') ? 2 : 1;
+  let snap=null;
+  while(steps-->0 && history.length) snap=history.pop();
+  if(snap){board=snap.board; turn=snap.turn; lastMove=snap.lastMove; gameOver=false; render('待ったしました。'+(turn===BLACK?'黒':'白')+'の番です');}
+};
+init();
+</script>
+</body>
+</html>
